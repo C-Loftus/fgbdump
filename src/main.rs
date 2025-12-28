@@ -234,12 +234,12 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                         info_line("Geometry Type", &format!("{:?}", header.geometry_type())),
                         info_line("Columns", &column_count.to_string()),
                         info_line("CRS", &crs),
-                        info_line("Metadata", &format!("{:?}", header.metadata())),
                         info_line("Spatial Index R-Tree Node Size", &index_node_size),
                         info_line("Has M Dimension", &header.has_m().to_string()),
                         info_line("Has Z Dimension", &header.has_z().to_string()),
                         info_line("Has T Dimension", &header.has_t().to_string()),
                         info_line("Has TM Dimension", &header.has_tm().to_string()),
+                        info_line("Custom Metadata", &format!("{:?}", header.metadata())),
                     ])
                     .block(Block::default().borders(Borders::ALL).title("Metadata"));
 
