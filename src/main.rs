@@ -1,23 +1,23 @@
-use argh::FromArgs;
-use flatgeobuf::HttpFgbReader;
+//! FlatGeobuf header viewer with tabs and bounding box map
+//!
+//! This example uses ratatui 0.3.x with tabs and a Canvas map tab for FlatGeobuf bounding box visualization.
 
-use crossterm::{
-    execute,
-    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
-    event::{self, Event, KeyCode, KeyEvent, KeyModifiers},
-};
-use ratatui::{
-    backend::CrosstermBackend,
-    layout::{Constraint, Direction, Layout},
-    style::{Color, Modifier, Style},
-    text::{Line, Span},
-    widgets::{Block, Borders, Paragraph, Wrap},
-    Terminal,
-};
 use std::io::stdout;
 
+use argh::FromArgs;
+use crossterm::{
+    execute,
+    event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
+    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+};
+use flatgeobuf::HttpFgbReader;
+use ratatui::{
+    Frame, Terminal, backend::CrosstermBackend, layout::{Constraint, Direction, Layout, Rect}, style::{Color, Modifier, Style}, text::{Line, Span}, widgets::{Block, Borders, Paragraph, Tabs, Widget, canvas::{Canvas, Map, MapResolution}}
+};
+use flatbuffers::Vector;
+
 #[derive(FromArgs, Debug)]
-/// Print info about a FlatGeobuf file; Created by Colton Loftus
+/// Print info about a FlatGeobuf file
 struct TopLevel {
     #[argh(subcommand)]
     cmd: Command,
@@ -34,12 +34,10 @@ enum Command {
 /// Display info about the FlatGeobuf header
 #[argh(subcommand, name = "header")]
 struct Header {
-    #[argh(option)]
-    /// the path or URL to the FlatGeobuf file
+    #[argh(option, description = "path or URL to the FlatGeobuf file")]
     file: String,
 
-    #[argh(switch)]
-    /// print to stdout instead of the TUI
+    #[argh(switch, description = "print to stdout instead of the TUI")]
     stdout: bool,
 }
 
@@ -47,12 +45,10 @@ struct Header {
 /// Query by a bounding box
 #[argh(subcommand, name = "query")]
 struct Query {
-    #[argh(option)]
-    /// the path or URL to the FlatGeobuf file
+    #[argh(option, description = "path or URL to the FlatGeobuf file")]
     file: String,
 
-    #[argh(option)]
-    /// the bounding box "xmin,ymin,xmax,ymax"
+    #[argh(option, description = "bounding box as xmin,ymin,xmax,ymax")]
     bbox: String,
 }
 
@@ -79,10 +75,35 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+// ----------------- TUI -----------------
+
 #[derive(Clone, Copy, PartialEq, Eq)]
-enum Tab {
+enum SelectedTab {
     Metadata,
     Columns,
+    Map,
+}
+
+impl SelectedTab {
+    fn next(self) -> Self {
+        match self {
+            Self::Metadata => Self::Columns,
+            Self::Columns => Self::Map,
+            Self::Map => Self::Metadata,
+        }
+    }
+
+    fn previous(self) -> Self {
+        match self {
+            Self::Metadata => Self::Map,
+            Self::Columns => Self::Metadata,
+            Self::Map => Self::Columns,
+        }
+    }
+
+    fn titles() -> Vec<&'static str> {
+        vec!["Metadata", "Columns", "Map"]
+    }
 }
 
 fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::error::Error>> {
@@ -92,50 +113,36 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
     let backend = CrosstermBackend::new(stdout);
     let mut terminal = Terminal::new(backend)?;
 
-    let mut active_tab = Tab::Metadata;
-    let tabs: [Tab; 2] = [Tab::Metadata, Tab::Columns];
+    let mut selected_tab = SelectedTab::Metadata;
+
+    // Extract bbox as Vec<f64>
+    let bbox: [f64; 4] = header
+        .envelope()
+        .map(|v| [v.get(0), v.get(1), v.get(2), v.get(3)])
+        .unwrap_or([0.0, 0.0, 0.0, 0.0]);
 
     loop {
         terminal.draw(|f| {
-            let area = f.area();
+            let size = f.size();
 
-            // Split area: top row for tabs, rest for content
-            let layout = Layout::default()
+            // Render tabs
+            let tabs_titles = SelectedTab::titles();
+            let tabs = Tabs::new(tabs_titles)
+                .select(selected_tab as usize)
+                .block(Block::default().borders(Borders::ALL).title("Header Categories"))
+                .style(Style::default().fg(Color::White))
+                .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
+            f.render_widget(tabs, Rect { x: 0, y: 0, width: size.width, height: 3 });
+
+            // Content area
+            let chunks = Layout::default()
                 .direction(Direction::Vertical)
                 .constraints([Constraint::Length(3), Constraint::Min(0)])
-                .split(area);
+                .split(size);
+            let content_area = chunks[1];
 
-            // Render tabs as a Paragraph
-            let tab_spans: Vec<Span> = tabs
-                .iter()
-                .enumerate()
-                .map(|(_, t)| {
-                    let text = match t {
-                        Tab::Metadata => " Metadata ",
-                        Tab::Columns => " Columns ",
-                    };
-                    if *t == active_tab {
-                        Span::styled(
-                            text,
-                            Style::default()
-                                .fg(Color::Green)
-                                .add_modifier(Modifier::BOLD | Modifier::UNDERLINED),
-                        )
-                        
-                    } else {
-                        Span::raw(text)
-                    }
-                })
-                .collect();
-
-            let tabs_paragraph = Paragraph::new(Line::from(tab_spans))
-                .block(Block::default().borders(Borders::BOTTOM));
-
-            f.render_widget(tabs_paragraph, layout[0]);
-
-            // Render tab content
-            match active_tab {
-                Tab::Metadata => {
+            match selected_tab {
+                SelectedTab::Metadata => {
                     let column_count = header.columns().map(|c| c.len()).unwrap_or(0);
                     let crs = header.crs().map_or("Undefined".to_string(), |c| format!("{:?}", c));
                     let envelope = header.envelope().map_or("Undefined".to_string(), |e| format!("{:?}", e));
@@ -146,43 +153,59 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                         info_line("Bounds", &envelope),
                         info_line("Geometry Type", &format!("{:?}", header.geometry_type())),
                         info_line("Columns", &column_count.to_string()),
-                        Line::from(""),
-                        Line::from(vec![
-                            Span::styled("Index Node Size ", Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD)),
-                            Span::raw(header.index_node_size().to_string()),
-                        ]),
                         info_line("CRS", &crs),
                     ])
-                    .wrap(Wrap { trim: true })
                     .block(Block::default().borders(Borders::ALL).title("Metadata"));
 
-                    f.render_widget(body, layout[1]);
+                    f.render_widget(body, content_area);
                 }
-                Tab::Columns => {
-                    let column_lines: Vec<Line> = header
+                SelectedTab::Columns => {
+                    let lines: Vec<Line> = header
                         .columns()
                         .unwrap_or_default()
                         .iter()
-                        .map(|c| info_line(&c.name(), ""))
+                        .map(|c| info_line(c.name(), &format!("{:?}", c.type_())))
                         .collect();
 
-                    let body = Paragraph::new(column_lines)
-                        .wrap(Wrap { trim: true })
+                    let body = Paragraph::new(lines)
                         .block(Block::default().borders(Borders::ALL).title("Columns"));
+                    f.render_widget(body, content_area);
+                }
+                SelectedTab::Map => {
+                    let xmin = bbox[0];
+                    let ymin = bbox[1];
+                    let xmax = bbox[2];
+                    let ymax = bbox[3];
 
-                    f.render_widget(body, layout[1]);
+                    let canvas = Canvas::default()
+                        .block(Block::default().borders(Borders::ALL).title("Bounding Box Map"))
+                        .x_bounds([xmin - 1.0, xmax + 1.0])
+                        .y_bounds([ymin - 1.0, ymax + 1.0])
+                        .paint(|ctx: &mut ratatui::widgets::canvas::Context<'_>| {
+                                        ctx.draw(&Map {
+                                color: Color::Red,
+                                resolution: MapResolution::High,
+                            });
+                            ctx.draw(&ratatui::widgets::canvas::Rectangle {
+                                x: xmin,
+                                y: ymin,
+                                width: xmax - xmin,
+                                height: ymax - ymin,
+                                color: Color::Green,
+                            });
+                        });
+
+                    f.render_widget(canvas, content_area);
                 }
             }
         })?;
 
-        // Handle key events
-        if let Event::Key(KeyEvent { code, modifiers, .. }) = event::read()? {
+        // Event handling
+        if let Event::Key(KeyEvent { code, kind: KeyEventKind::Press, .. }) = event::read()? {
             match code {
-                KeyCode::Right => active_tab = Tab::Columns,
-                KeyCode::Left => active_tab = Tab::Metadata,
-                KeyCode::Esc | KeyCode::Backspace => break,
-                KeyCode::Char('c') if modifiers.contains(KeyModifiers::CONTROL) => break,
-                KeyCode::Char('d') if modifiers.contains(KeyModifiers::CONTROL) => break,
+                KeyCode::Right => selected_tab = selected_tab.next(),
+                KeyCode::Left => selected_tab = selected_tab.previous(),
+                KeyCode::Esc | KeyCode::Char('q') => break,
                 _ => {}
             }
         }

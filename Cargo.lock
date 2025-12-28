@@ -449,6 +449,7 @@ version = "0.1.0"
 dependencies = [
  "argh",
  "crossterm",
+ "flatbuffers 25.12.19",
  "flatgeobuf",
  "geozero",
  "ratatui",
@@ -495,6 +496,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "flatbuffers"
+version = "25.12.19"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "35f6839d7b3b98adde531effaf34f0c2badc6f4735d26fe74709d8e513a96ef3"
+dependencies = [
+ "bitflags 2.10.0",
+ "rustc_version",
+]
+
+[[package]]
 name = "flatgeobuf"
 version = "6.0.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -503,7 +514,7 @@ dependencies = [
  "byteorder",
  "bytes",
  "fallible-streaming-iterator",
- "flatbuffers",
+ "flatbuffers 24.12.23",
  "geo-traits",
  "geozero",
  "http-range-client",

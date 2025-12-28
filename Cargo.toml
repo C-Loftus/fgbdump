@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 argh = "0.1.13"
 crossterm = "0.29.0"
+flatbuffers = "25.12.19"
 flatgeobuf = "6.0.1"
 geozero = "0.15.1"
 ratatui = "0.30.0"
