@@ -187,7 +187,7 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                 .style(Style::default().fg(Color::White))
                 .highlight_style(
                     Style::default()
-                        .fg(Color::Yellow)
+                        .fg(Color::Blue)
                         .add_modifier(Modifier::BOLD),
                 );
             f.render_widget(
@@ -210,20 +210,36 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
             match selected_tab {
                 SelectedTab::Metadata => {
                     let column_count = header.columns().map(|c| c.len()).unwrap_or(0);
-                    let crs = header
-                        .crs()
-                        .map_or("Undefined".to_string(), |c| format!("{:?}", c.code()));
+                    let crs = match header.crs() {
+                        Some(crs) => format!("{}:{}", crs.org().unwrap_or("UNDEFINED_CRS_ORG"), crs.code()),
+                        None => "Undefined".to_string(),
+                    };
                     let envelope = header
                         .envelope()
                         .map_or("Undefined".to_string(), |e| format!("{:?}", e));
 
+                    
+                    let index_node_size = match header.index_node_size() {
+                        0 => "No Spatial Index".to_string(),
+                        _ => format!("{}", header.index_node_size()),
+                    };
+
                     let body = Paragraph::new(vec![
-                        info_line("Name", header.name().unwrap_or("—")),
+                        info_line("Name", header.name().unwrap_or("")),
+                        // Not clear if anything uses the title, commenting it out
+                        // info_line("Title", header.title().unwrap_or("")),
+                        info_line("Description", header.description().unwrap_or("")),
                         info_line("Features", &header.features_count().to_string()),
                         info_line("Bounds", &envelope),
                         info_line("Geometry Type", &format!("{:?}", header.geometry_type())),
                         info_line("Columns", &column_count.to_string()),
                         info_line("CRS", &crs),
+                        info_line("Metadata", &format!("{:?}", header.metadata())),
+                        info_line("Spatial Index R-Tree Node Size", &index_node_size),
+                        info_line("Has M Dimension", &header.has_m().to_string()),
+                        info_line("Has Z Dimension", &header.has_z().to_string()),
+                        info_line("Has T Dimension", &header.has_t().to_string()),
+                        info_line("Has TM Dimension", &header.has_tm().to_string()),
                     ])
                     .block(Block::default().borders(Borders::ALL).title("Metadata"));
 
@@ -303,7 +319,7 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                         .y_bounds([-90.0, 90.0])
                         .paint(|ctx: &mut ratatui::widgets::canvas::Context<'_>| {
                             ctx.draw(&Map {
-                                color: Color::Green,
+                                color: Color::Red,
                                 resolution: MapResolution::High,
                             });
                             ctx.draw(&ratatui::widgets::canvas::Rectangle {
@@ -311,7 +327,7 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                                 y: ymin,
                                 width: xmax - xmin,
                                 height: ymax - ymin,
-                                color: Color::Red,
+                                color: Color::Green,
                             });
                         });
 
