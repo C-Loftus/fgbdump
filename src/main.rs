@@ -6,15 +6,25 @@ use std::io::stdout;
 
 use argh::FromArgs;
 use crossterm::{
-    execute,
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
-    terminal::{disable_raw_mode, enable_raw_mode, EnterAlternateScreen, LeaveAlternateScreen},
+    execute,
+    terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use flatgeobuf::HttpFgbReader;
+use ratatui::layout::Constraint;
+use ratatui::widgets::{Cell, Row, Table};
 use ratatui::{
-    Frame, Terminal, backend::CrosstermBackend, layout::{Constraint, Direction, Layout, Rect}, style::{Color, Modifier, Style}, text::{Line, Span}, widgets::{Block, Borders, Paragraph, Tabs, Widget, canvas::{Canvas, Map, MapResolution}}
+    Terminal,
+    backend::CrosstermBackend,
+    layout::{Direction, Layout, Rect},
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
+    widgets::TableState,
+    widgets::{
+        Block, Borders, Paragraph, Tabs,
+        canvas::{Canvas, Map, MapResolution},
+    },
 };
-use flatbuffers::Vector;
 
 #[derive(FromArgs, Debug)]
 /// Print info about a FlatGeobuf file
@@ -75,8 +85,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
-// ----------------- TUI -----------------
-
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum SelectedTab {
     Metadata,
@@ -106,6 +114,46 @@ impl SelectedTab {
     }
 }
 
+struct ColumnsTableState {
+    state: TableState,
+}
+
+impl ColumnsTableState {
+    fn new() -> Self {
+        Self {
+            state: TableState::default().with_selected(Some(0)),
+        }
+    }
+
+    fn next(&mut self, len: usize) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i >= len - 1 {
+                    0
+                } else {
+                    i + 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+    }
+
+    fn previous(&mut self, len: usize) {
+        let i = match self.state.selected() {
+            Some(i) => {
+                if i == 0 {
+                    len - 1
+                } else {
+                    i - 1
+                }
+            }
+            None => 0,
+        };
+        self.state.select(Some(i));
+    }
+}
+
 fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let mut stdout = stdout();
@@ -121,18 +169,36 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
         .map(|v| [v.get(0), v.get(1), v.get(2), v.get(3)])
         .unwrap_or([0.0, 0.0, 0.0, 0.0]);
 
+    let mut columns_table_state = ColumnsTableState::new();
+
     loop {
         terminal.draw(|f| {
-            let size = f.size();
+            let size = f.area();
 
             // Render tabs
             let tabs_titles = SelectedTab::titles();
             let tabs = Tabs::new(tabs_titles)
                 .select(selected_tab as usize)
-                .block(Block::default().borders(Borders::ALL).title("Header Categories"))
+                .block(
+                    Block::default()
+                        .borders(Borders::ALL)
+                        .title("Header Categories"),
+                )
                 .style(Style::default().fg(Color::White))
-                .highlight_style(Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD));
-            f.render_widget(tabs, Rect { x: 0, y: 0, width: size.width, height: 3 });
+                .highlight_style(
+                    Style::default()
+                        .fg(Color::Yellow)
+                        .add_modifier(Modifier::BOLD),
+                );
+            f.render_widget(
+                tabs,
+                Rect {
+                    x: 0,
+                    y: 0,
+                    width: size.width,
+                    height: 3,
+                },
+            );
 
             // Content area
             let chunks = Layout::default()
@@ -144,8 +210,12 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
             match selected_tab {
                 SelectedTab::Metadata => {
                     let column_count = header.columns().map(|c| c.len()).unwrap_or(0);
-                    let crs = header.crs().map_or("Undefined".to_string(), |c| format!("{:?}", c));
-                    let envelope = header.envelope().map_or("Undefined".to_string(), |e| format!("{:?}", e));
+                    let crs = header
+                        .crs()
+                        .map_or("Undefined".to_string(), |c| format!("{:?}", c.code()));
+                    let envelope = header
+                        .envelope()
+                        .map_or("Undefined".to_string(), |e| format!("{:?}", e));
 
                     let body = Paragraph::new(vec![
                         info_line("Name", header.name().unwrap_or("—")),
@@ -160,16 +230,62 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                     f.render_widget(body, content_area);
                 }
                 SelectedTab::Columns => {
-                    let lines: Vec<Line> = header
-                        .columns()
-                        .unwrap_or_default()
-                        .iter()
-                        .map(|c| info_line(c.name(), &format!("{:?}", c.type_())))
-                        .collect();
+                    let columns_data = header.columns().unwrap_or_default();
 
-                    let body = Paragraph::new(lines)
-                        .block(Block::default().borders(Borders::ALL).title("Columns"));
-                    f.render_widget(body, content_area);
+                    let header_cells = [
+                        "Name",
+                        "Type",
+                        "Description",
+                        "Nullable",
+                        "Primary Key",
+                        "Unique",
+                        "Precision",
+                        "Scale",
+                        "Width",
+                    ]
+                    .iter()
+                    .map(|h| Cell::from(*h))
+                    .collect::<Vec<_>>();
+                    let table_header = Row::new(header_cells).height(1);
+
+                    let rows = columns_data.iter().map(|c| {
+                        let cells = vec![
+                            Cell::from(c.name()),
+                            Cell::from(format!("{:?}", c.type_())),
+                            Cell::from(c.description().unwrap_or("—")),
+                            Cell::from(c.nullable().to_string()),
+                            Cell::from(c.primary_key().to_string()),
+                            Cell::from(c.unique().to_string()),
+                            Cell::from(c.precision().to_string()),
+                            Cell::from(c.scale().to_string()),
+                            Cell::from(c.width().to_string()),
+                        ];
+                        Row::new(cells).height(1)
+                    });
+
+                    let widths = &[
+                        Constraint::Length(20),
+                        Constraint::Length(10),
+                        Constraint::Length(25),
+                        Constraint::Length(10),
+                        Constraint::Length(12),
+                        Constraint::Length(8),
+                        Constraint::Length(10),
+                        Constraint::Length(8),
+                        Constraint::Length(8),
+                    ];
+
+                    let table = Table::new(rows, widths)
+                        .header(table_header)
+                        .block(Block::default().borders(Borders::ALL).title("Columns"))
+                        .highlight_style(
+                            Style::default()
+                                .fg(Color::Yellow)
+                                .add_modifier(Modifier::BOLD),
+                        )
+                        .highlight_symbol(">> ");
+
+                    f.render_stateful_widget(table, content_area, &mut columns_table_state.state);
                 }
                 SelectedTab::Map => {
                     let xmin = bbox[0];
@@ -178,12 +294,16 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                     let ymax = bbox[3];
 
                     let canvas = Canvas::default()
-                        .block(Block::default().borders(Borders::ALL).title("Bounding Box Map"))
-                        .x_bounds([xmin - 1.0, xmax + 1.0])
-                        .y_bounds([ymin - 1.0, ymax + 1.0])
+                        .block(
+                            Block::default()
+                                .borders(Borders::ALL)
+                                .title("Bounding Box Map"),
+                        )
+                        .x_bounds([-180.0, 180.0])
+                        .y_bounds([-90.0, 90.0])
                         .paint(|ctx: &mut ratatui::widgets::canvas::Context<'_>| {
-                                        ctx.draw(&Map {
-                                color: Color::Red,
+                            ctx.draw(&Map {
+                                color: Color::Green,
                                 resolution: MapResolution::High,
                             });
                             ctx.draw(&ratatui::widgets::canvas::Rectangle {
@@ -191,7 +311,7 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                                 y: ymin,
                                 width: xmax - xmin,
                                 height: ymax - ymin,
-                                color: Color::Green,
+                                color: Color::Red,
                             });
                         });
 
@@ -201,11 +321,32 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
         })?;
 
         // Event handling
-        if let Event::Key(KeyEvent { code, kind: KeyEventKind::Press, .. }) = event::read()? {
+        if let Event::Key(KeyEvent {
+            code,
+            kind: KeyEventKind::Press,
+            modifiers,
+            ..
+        }) = event::read()?
+        {
             match code {
                 KeyCode::Right => selected_tab = selected_tab.next(),
                 KeyCode::Left => selected_tab = selected_tab.previous(),
-                KeyCode::Esc | KeyCode::Char('q') => break,
+                KeyCode::Esc | KeyCode::Char('q') | KeyCode::Char('Q') => break,
+                KeyCode::Char('c') => {
+                    if modifiers.contains(crossterm::event::KeyModifiers::CONTROL) {
+                        break;
+                    }
+                }
+                KeyCode::Down | KeyCode::Char('j') => {
+                    if selected_tab == SelectedTab::Columns {
+                        columns_table_state.next(header.columns().unwrap_or_default().len());
+                    }
+                }
+                KeyCode::Up | KeyCode::Char('k') => {
+                    if selected_tab == SelectedTab::Columns {
+                        columns_table_state.previous(header.columns().unwrap_or_default().len());
+                    }
+                }
                 _ => {}
             }
         }
@@ -222,7 +363,9 @@ fn info_line(label: &str, value: &str) -> Line<'static> {
     Line::from(vec![
         Span::styled(
             format!("{label}: "),
-            Style::default().fg(Color::Yellow).add_modifier(Modifier::BOLD),
+            Style::default()
+                .fg(Color::Yellow)
+                .add_modifier(Modifier::BOLD),
         ),
         Span::raw(value.to_string()),
     ])
