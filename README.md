@@ -5,7 +5,7 @@ fgbdump prints the contents of a [FlatGeobuf](https://flatgeobuf.org/) file in a
 There are three tabs which can be navigated using the left and right arrow keys:
 
 1. Metadata: shows the metadata of the dataset from the [FlatGeobuf header](https://github.com/flatgeobuf/flatgeobuf/blob/master/src/fbs/header.fbs)
-2. Columns: which shows the list of column names in the dataset
+2. Columns: which shows the list of column names in the dataset and associated metadata
 3. Map: visualizes the extent of the dataset as a green rectangle over the world map
 
 Within a given tab, you can scroll up and down using the up and down arrow keys or the `j` and `k` keys.
