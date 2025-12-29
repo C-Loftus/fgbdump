@@ -19,10 +19,10 @@ use ratatui::{
     layout::{Constraint, Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     symbols::scrollbar,
-    text::{Line, Span},
+    text::Line,
     widgets::{
         Block, Borders, Cell, Paragraph, Row, Scrollbar, ScrollbarOrientation, ScrollbarState,
-        Table, Tabs,
+        Table,
     },
 };
 

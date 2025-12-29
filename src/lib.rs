@@ -2,7 +2,6 @@ pub mod cli;
 
 use ratatui::{
     style::{Color, Modifier, Style},
-    symbols,
     text::{Line, Span},
     widgets::{
         Block, Borders, TableState, Tabs, Widget,
