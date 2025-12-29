@@ -18,6 +18,8 @@ Press `q` or `ctrl-c` to quit the application.
 
 ## Installation
 
+_If you would like a pre-built binary for your platform or package manager, please open an issue._
+
 ```sh
 cargo install --git https://github.com/c-loftus/fgbdump
 ```
