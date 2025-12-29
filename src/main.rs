@@ -11,7 +11,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use fgbdump::{ColumnsTableState, SelectedTab, map_with_bbox_overlay};
-use flatgeobuf::{Crs, HttpFgbReader};
+use flatgeobuf::HttpFgbReader;
 use ratatui::layout::Constraint;
 use ratatui::widgets::{Cell, Row, Table};
 use ratatui::{
@@ -20,11 +20,7 @@ use ratatui::{
     layout::{Direction, Layout, Rect},
     style::{Color, Modifier, Style},
     text::{Line, Span},
-    widgets::TableState,
-    widgets::{
-        Block, Borders, Paragraph, Tabs,
-        canvas::{Canvas, Map, MapResolution},
-    },
+    widgets::{Block, Borders, Paragraph, Tabs},
 };
 
 #[derive(FromArgs, Debug)]
@@ -161,16 +157,25 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                         info_line("Geometry Type", &format!("{:?}", header.geometry_type())),
                         info_line("Columns", &column_count.to_string()),
                         info_line("Spatial Index R-Tree Node Size", &index_node_size),
+                    ];
+
+                    for line in [
+                        Line::default(),
                         info_line("Has M Dimension", &header.has_m().to_string()),
                         info_line("Has Z Dimension", &header.has_z().to_string()),
                         info_line("Has T Dimension", &header.has_t().to_string()),
                         info_line("Has TM Dimension", &header.has_tm().to_string()),
-                        info_line("Custom Metadata", &format!("{:?}", header.metadata())),
-                    ];
+                    ] {
+                        lines.push(line);
+                    }
 
                     let crs = header.crs();
 
                     if let Some(crs) = crs {
+                        // separator
+                        lines.push(
+                            Line::default(),
+                        );
                         // code; name; code string; description; org; wkt
                         lines.push(info_line("CRS Code", &crs.code().to_string()));
                         lines.push(info_line("CRS Name", &crs.name().unwrap_or_default()));
@@ -187,6 +192,13 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                     } else {
                         lines.push(info_line("CRS", "Undefined"));
                     }
+
+                    // separator
+                    lines.push(Line::default());
+                    lines.push(info_line(
+                        "Custom Metadata",
+                        &format!("{:?}", header.metadata()),
+                    ));
 
                     let body = Paragraph::new(lines)
                         .block(Block::default().borders(Borders::ALL).title("Metadata"));
