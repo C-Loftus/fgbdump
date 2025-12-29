@@ -1,14 +1,19 @@
-use std::io::stdout;
+use std::{
+    fs::File,
+    io::{BufReader, stdout},
+};
 
+use bytesize::ByteSize;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use fgbdump::{
-    Column, ColumnsTableState, SelectedTab, cli::Args, info_line, make_tabs, map_with_bbox_overlay,
+    Column, ColumnsTableState, SelectedTab, cli::Args, info_line, is_remote_file, make_tabs,
+    map_with_bbox_overlay,
 };
-use flatgeobuf::HttpFgbReader;
+use flatgeobuf::{FgbReader, HttpFgbReader};
 use ratatui::{
     Terminal,
     backend::CrosstermBackend,
@@ -21,22 +26,50 @@ use ratatui::{
         Table,
     },
 };
+use reqwest::header::CONTENT_LENGTH;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Args = argh::from_env();
 
-    let fgb = HttpFgbReader::open(&args.first).await?;
-    let header = fgb.header();
-    if args.stdout {
-        println!("{:#?}", header);
-        return Ok(());
+    if is_remote_file(&args.file) {
+        // Remote file: use HTTP HEAD to get content length
+        let client = reqwest::Client::new();
+        let resp = client.head(&args.file).send().await?;
+        let content_length = resp
+            .headers()
+            .get(CONTENT_LENGTH)
+            .and_then(|val| val.to_str().ok())
+            .and_then(|s| s.parse::<u64>().ok());
+
+        let fgb = HttpFgbReader::open(&args.file).await?;
+        let header = fgb.header();
+        if args.stdout {
+            println!("{:#?}", header);
+            return Ok(());
+        }
+        render_header_tui(&header, content_length)?;
+    } else {
+        let metadata = std::fs::metadata(&args.file)?;
+        let file_size = metadata.len();
+
+        let mut filein = BufReader::new(File::open(&args.file)?);
+        let fgb = FgbReader::open(&mut filein)?;
+        let header = fgb.header();
+        if args.stdout {
+            println!("{:#?}", header);
+            return Ok(());
+        }
+        render_header_tui(&header, Some(file_size))?;
     }
-    render_header_tui(&header)?;
+
     Ok(())
 }
 
-fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::error::Error>> {
+fn render_header_tui(
+    header: &flatgeobuf::Header,
+    byte_size: Option<u64>,
+) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen)?;
@@ -91,8 +124,10 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                         _ => format!("{}", header.index_node_size()),
                     };
 
+                    let byte_size_str = byte_size.map(|s| ByteSize(s).to_string());
                     let mut lines = vec![
                         info_line("Name", header.name().unwrap_or("")),
+                        info_line("File Size", byte_size_str.as_deref().unwrap_or("Unknown")),
                         info_line("Description", header.description().unwrap_or("")),
                         info_line("Features", &header.features_count().to_string()),
                         info_line("Bounds", &envelope),

@@ -147,3 +147,7 @@ pub struct Column<'a, T> {
     pub header: &'a str,
     pub value: Box<dyn Fn(&T) -> String + 'a>,
 }
+
+pub fn is_remote_file(file: &str) -> bool {
+    file.starts_with("http://") || file.starts_with("https://")
+}
