@@ -1,7 +1,3 @@
-//! FlatGeobuf header viewer with tabs and bounding box map
-//!
-//! This example uses ratatui 0.3.x with tabs and a Canvas map tab for FlatGeobuf bounding box visualization.
-
 use std::io::stdout;
 
 use crossterm::{
@@ -118,17 +114,17 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                     if let Some(crs) = header.crs() {
                         lines.push(Line::default());
                         lines.push(info_line("CRS Code", &crs.code().to_string()));
-                        lines.push(info_line("CRS Name", &crs.name().unwrap_or_default()));
+                        lines.push(info_line("CRS Name", crs.name().unwrap_or_default()));
                         lines.push(info_line(
                             "CRS Code String",
-                            &crs.code_string().unwrap_or_default(),
+                            crs.code_string().unwrap_or_default(),
                         ));
                         lines.push(info_line(
                             "CRS Description",
-                            &crs.description().unwrap_or_default(),
+                            crs.description().unwrap_or_default(),
                         ));
-                        lines.push(info_line("CRS Authority", &crs.org().unwrap_or_default()));
-                        lines.push(info_line("CRS WKT", &crs.wkt().unwrap_or_default()));
+                        lines.push(info_line("CRS Organization", crs.org().unwrap_or_default()));
+                        lines.push(info_line("CRS WKT", crs.wkt().unwrap_or_default()));
                     } else {
                         lines.push(info_line("CRS", "Undefined"));
                     }

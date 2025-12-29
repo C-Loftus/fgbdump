@@ -49,6 +49,12 @@ impl ColumnsTableState {
     }
 }
 
+impl Default for ColumnsTableState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub fn map_with_bbox_overlay(xmin: f64, ymin: f64, xmax: f64, ymax: f64) -> impl Widget {
     const MAX_LONGITUDE_RANGE: [f64; 2] = [-180.0, 180.0];
     const MAX_LATITUDE_RANGE: [f64; 2] = [-90.0, 90.0];
