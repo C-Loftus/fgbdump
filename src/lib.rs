@@ -2,6 +2,7 @@ pub mod cli;
 
 use ratatui::{
     style::{Color, Modifier, Style},
+    symbols,
     text::{Line, Span},
     widgets::{
         Block, Borders, TableState, Tabs, Widget,
@@ -50,19 +51,24 @@ impl ColumnsTableState {
 }
 
 pub fn map_with_bbox_overlay(xmin: f64, ymin: f64, xmax: f64, ymax: f64) -> impl Widget {
+    const MAX_LONGITUDE_RANGE: [f64; 2] = [-180.0, 180.0];
+    const MAX_LATITUDE_RANGE: [f64; 2] = [-90.0, 90.0];
     Canvas::default()
         .block(
             Block::default()
                 .borders(Borders::ALL)
-                .title("Extent of Data"),
+                .title("Extent of Data in EPSG:4326"),
         )
-        .x_bounds([-180.0, 180.0])
-        .y_bounds([-90.0, 90.0])
+        .x_bounds(MAX_LONGITUDE_RANGE)
+        .y_bounds(MAX_LATITUDE_RANGE)
         .paint(move |ctx| {
+            // draw section that isn't included in the dataset
             ctx.draw(&Map {
                 color: Color::Red,
                 resolution: MapResolution::High,
             });
+            // make all the section that contains the dataset
+            // enveloped in green to show it is included
             ctx.draw(&ratatui::widgets::canvas::Rectangle {
                 x: xmin,
                 y: ymin,
@@ -115,7 +121,8 @@ pub fn make_tabs(selected_tab: SelectedTab) -> impl Widget {
         .highlight_style(
             Style::default()
                 .fg(Color::Blue)
-                .add_modifier(Modifier::BOLD),
+                .add_modifier(Modifier::BOLD)
+                .add_modifier(Modifier::UNDERLINED),
         )
 }
 
@@ -130,7 +137,6 @@ pub fn info_line(label: &str, value: &str) -> Line<'static> {
         Span::raw(value.to_string()),
     ])
 }
-
 
 pub struct Column<'a, T> {
     pub header: &'a str,

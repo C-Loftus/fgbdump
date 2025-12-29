@@ -10,9 +10,7 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use fgbdump::{
-    Column, ColumnsTableState, SelectedTab,
-    cli::{Command, TopLevel},
-    info_line, make_tabs, map_with_bbox_overlay,
+    Column, ColumnsTableState, SelectedTab, cli::Args, info_line, make_tabs, map_with_bbox_overlay,
 };
 use flatgeobuf::HttpFgbReader;
 use ratatui::{
@@ -30,24 +28,15 @@ use ratatui::{
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    let args: TopLevel = argh::from_env();
+    let args: Args = argh::from_env();
 
-    match args.cmd {
-        Command::Header(cmd) => {
-            let fgb = HttpFgbReader::open(&cmd.file).await?;
-            let header = fgb.header();
-            if cmd.stdout {
-                println!("{:#?}", header);
-                return Ok(());
-            }
-            render_header_tui(&header)?;
-        }
-        Command::Query(cmd) => {
-            let _fgb = HttpFgbReader::open(&cmd.file).await?;
-            println!("BBox query: {}", cmd.bbox);
-        }
+    let fgb = HttpFgbReader::open(&args.first).await?;
+    let header = fgb.header();
+    if args.stdout {
+        println!("{:#?}", header);
+        return Ok(());
     }
-
+    render_header_tui(&header)?;
     Ok(())
 }
 
@@ -70,6 +59,7 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
         .unwrap_or([0.0, 0.0, 0.0, 0.0]);
 
     let mut columns_table_state = ColumnsTableState::new();
+    let mut columns_scroll_state = ScrollbarState::default();
 
     loop {
         terminal.draw(|f| {
@@ -149,20 +139,15 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                         &format!("{:?}", header.metadata()),
                     ));
 
-                    const NUMBER_OF_ROWS_ADDED_BY_BORDER: u16 = 2;
-                    let visible_height = content_area
-                        .height
-                        .saturating_sub(NUMBER_OF_ROWS_ADDED_BY_BORDER)
-                        as usize;
-                    let max_scroll = lines.len().saturating_sub(visible_height);
+                    let max_scroll = lines.len() - 2;
 
                     metadata_scroll = metadata_scroll.min(max_scroll);
-
                     metadata_scroll_state = metadata_scroll_state
                         .content_length(max_scroll + 1)
                         .position(metadata_scroll);
 
                     let body = Paragraph::new(lines)
+                        .wrap(ratatui::widgets::Wrap { trim: true }) // enable wrapping
                         .scroll((metadata_scroll as u16, 0))
                         .block(Block::default().borders(Borders::ALL).title("Metadata"));
 
@@ -180,6 +165,21 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
 
                 SelectedTab::Columns => {
                     let columns_data = header.columns().unwrap_or_default();
+
+                    let total_rows = columns_data.len();
+
+                    const TABLE_CHROME_ROWS: u16 = 3; // top border + header + bottom border
+                    let visible_rows =
+                        content_area.height.saturating_sub(TABLE_CHROME_ROWS) as usize;
+
+                    let max_scroll = total_rows.saturating_sub(visible_rows);
+
+                    let selected = columns_table_state.state.selected().unwrap_or(0);
+                    let scroll_pos = selected.min(max_scroll);
+
+                    columns_scroll_state = columns_scroll_state
+                        .content_length(max_scroll + 1)
+                        .position(scroll_pos);
 
                     let columns: Vec<Column<_>> = vec![
                         Column {
@@ -237,7 +237,11 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
 
                     let table = Table::new(rows, &widths)
                         .header(table_header)
-                        .block(Block::default().borders(Borders::ALL).title("Columns"))
+                        .block(Block::default().borders(Borders::ALL).title(format!(
+                            "Columns (Focused {} of {})",
+                            selected + 1,
+                            total_rows
+                        )))
                         .row_highlight_style(
                             Style::default()
                                 .fg(Color::Yellow)
@@ -246,6 +250,14 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                         .highlight_symbol(">> ");
 
                     f.render_stateful_widget(table, content_area, &mut columns_table_state.state);
+                    f.render_stateful_widget(
+                        Scrollbar::new(ScrollbarOrientation::VerticalRight)
+                            .symbols(scrollbar::VERTICAL)
+                            .begin_symbol(Some("↑"))
+                            .end_symbol(Some("↓")),
+                        content_area,
+                        &mut columns_scroll_state,
+                    );
                 }
 
                 SelectedTab::Map => {
