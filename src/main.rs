@@ -10,7 +10,7 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use fgbdump::ColumnsTableState;
+use fgbdump::{ColumnsTableState, SelectedTab, map_with_bbox_overlay};
 use flatgeobuf::{Crs, HttpFgbReader};
 use ratatui::layout::Constraint;
 use ratatui::widgets::{Cell, Row, Table};
@@ -84,35 +84,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
 
     Ok(())
-}
-
-#[derive(Clone, Copy, PartialEq, Eq)]
-enum SelectedTab {
-    Metadata,
-    Columns,
-    Map,
-}
-
-impl SelectedTab {
-    fn next(self) -> Self {
-        match self {
-            Self::Metadata => Self::Columns,
-            Self::Columns => Self::Map,
-            Self::Map => Self::Metadata,
-        }
-    }
-
-    fn previous(self) -> Self {
-        match self {
-            Self::Metadata => Self::Map,
-            Self::Columns => Self::Metadata,
-            Self::Map => Self::Columns,
-        }
-    }
-
-    fn titles() -> Vec<&'static str> {
-        vec!["Metadata", "Columns", "Map"]
-    }
 }
 
 fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::error::Error>> {
@@ -286,28 +257,7 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                     let xmax = bbox[2];
                     let ymax = bbox[3];
 
-                    let canvas = Canvas::default()
-                        .block(
-                            Block::default()
-                                .borders(Borders::ALL)
-                                .title("Extent of Data"),
-                        )
-                        .x_bounds([-180.0, 180.0])
-                        .y_bounds([-90.0, 90.0])
-                        .paint(|ctx: &mut ratatui::widgets::canvas::Context<'_>| {
-                            ctx.draw(&Map {
-                                color: Color::Red,
-                                resolution: MapResolution::High,
-                            });
-                            ctx.draw(&ratatui::widgets::canvas::Rectangle {
-                                x: xmin,
-                                y: ymin,
-                                width: xmax - xmin,
-                                height: ymax - ymin,
-                                color: Color::Green,
-                            });
-                        });
-
+                    let canvas = map_with_bbox_overlay(xmin, ymin, xmax, ymax);
                     f.render_widget(canvas, content_area);
                 }
             }
