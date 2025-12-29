@@ -1,0 +1,63 @@
+# Copyright 2025 Colton Loftus
+# SPDX-License-Identifier: GNU AFFERO GENERAL PUBLIC LICENSE
+
+minimum_pre_commit_version: "2.9.0"
+ci:
+  autoupdate_schedule: monthly
+repos:
+  - repo: meta
+    hooks:
+      - id: check-useless-excludes
+  - repo: local
+    hooks:
+      - id: forbid-symlinks
+        name: Forbid symlinks
+        entry: Forbid symlinks
+        language: fail
+        types: [symlink]
+  - repo: https://github.com/Lucas-C/pre-commit-hooks
+    rev: v1.5.5
+    hooks:
+      - id: forbid-crlf
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-case-conflict
+      - id: check-executables-have-shebangs
+      - id: check-merge-conflict
+      - id: check-shebang-scripts-are-executable
+      - id: destroyed-symlinks
+      - id: detect-private-key
+      - id: end-of-file-fixer
+        exclude_types: [svg]
+      - id: fix-byte-order-marker
+      - id: mixed-line-ending
+  - repo: https://github.com/google/addlicense
+    rev: "55a521bf81c24480094950caa3566548fa63875e"
+    hooks:
+      - id: addlicense
+        args: ["-s=only", -l, "Apache-2.0", -c, "Colton Loftus"]
+  - repo: local
+    hooks: 
+      - id: rustfmt
+        name: rustfmt
+        entry: bash -c "cargo fmt --all -- "
+        language: system
+        types: [rust]
+        pass_filenames: false # cargo fmt handles files itself
+
+      - id: cargo check 
+        name: cargo check
+        # check everything compiles
+        entry: bash -c "cargo check --examples --locked --all-features --tests --benches  --bins  --workspace"
+        language: system
+        types: [rust]
+        pass_filenames: false  # cargo check handles files itself
+
+      - id: clippy
+        name: clippy
+        # lint the entire project with warnings
+        entry: bash -c "cargo clippy --benches --examples --tests --no-deps --no-default-features -- -D warnings"
+        language: system
+        types: [rust]
+        pass_filenames: false # cargo clippy handles files itself

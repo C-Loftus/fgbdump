@@ -1,3 +1,6 @@
+// Copyright 2025 Colton Loftus
+// SPDX-License-Identifier: Apache-2.0
+
 use std::{
     fs::File,
     io::{BufReader, stdout},
@@ -28,7 +31,7 @@ use ratatui::{
 };
 use reqwest::header::CONTENT_LENGTH;
 
-#[tokio::main]
+#[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Args = argh::from_env();
 
@@ -50,6 +53,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         }
         render_header_tui(&header, content_length)?;
     } else {
+        // Local file: use metadata to get size
         let metadata = std::fs::metadata(&args.file)?;
         let file_size = metadata.len();
 
@@ -170,7 +174,7 @@ fn render_header_tui(
                         &format!("{:?}", header.metadata()),
                     ));
 
-                    let max_scroll = lines.len() - 2;
+                    let max_scroll = lines.len();
 
                     metadata_scroll = metadata_scroll.min(max_scroll);
                     metadata_scroll_state = metadata_scroll_state
