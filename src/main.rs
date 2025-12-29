@@ -10,7 +10,8 @@ use crossterm::{
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use flatgeobuf::HttpFgbReader;
+use fgbdump::ColumnsTableState;
+use flatgeobuf::{Crs, HttpFgbReader};
 use ratatui::layout::Constraint;
 use ratatui::widgets::{Cell, Row, Table};
 use ratatui::{
@@ -114,46 +115,6 @@ impl SelectedTab {
     }
 }
 
-struct ColumnsTableState {
-    state: TableState,
-}
-
-impl ColumnsTableState {
-    fn new() -> Self {
-        Self {
-            state: TableState::default().with_selected(Some(0)),
-        }
-    }
-
-    fn next(&mut self, len: usize) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i >= len - 1 {
-                    0
-                } else {
-                    i + 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
-
-    fn previous(&mut self, len: usize) {
-        let i = match self.state.selected() {
-            Some(i) => {
-                if i == 0 {
-                    len - 1
-                } else {
-                    i - 1
-                }
-            }
-            None => 0,
-        };
-        self.state.select(Some(i));
-    }
-}
-
 fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::error::Error>> {
     enable_raw_mode()?;
     let mut stdout = stdout();
@@ -210,21 +171,16 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
             match selected_tab {
                 SelectedTab::Metadata => {
                     let column_count = header.columns().map(|c| c.len()).unwrap_or(0);
-                    let crs = match header.crs() {
-                        Some(crs) => format!("{}:{}", crs.org().unwrap_or("UNDEFINED_CRS_ORG"), crs.code()),
-                        None => "Undefined".to_string(),
-                    };
                     let envelope = header
                         .envelope()
                         .map_or("Undefined".to_string(), |e| format!("{:?}", e));
 
-                    
                     let index_node_size = match header.index_node_size() {
                         0 => "No Spatial Index".to_string(),
                         _ => format!("{}", header.index_node_size()),
                     };
 
-                    let body = Paragraph::new(vec![
+                    let mut lines = vec![
                         info_line("Name", header.name().unwrap_or("")),
                         // Not clear if anything uses the title, commenting it out
                         // info_line("Title", header.title().unwrap_or("")),
@@ -233,15 +189,36 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                         info_line("Bounds", &envelope),
                         info_line("Geometry Type", &format!("{:?}", header.geometry_type())),
                         info_line("Columns", &column_count.to_string()),
-                        info_line("CRS", &crs),
                         info_line("Spatial Index R-Tree Node Size", &index_node_size),
                         info_line("Has M Dimension", &header.has_m().to_string()),
                         info_line("Has Z Dimension", &header.has_z().to_string()),
                         info_line("Has T Dimension", &header.has_t().to_string()),
                         info_line("Has TM Dimension", &header.has_tm().to_string()),
                         info_line("Custom Metadata", &format!("{:?}", header.metadata())),
-                    ])
-                    .block(Block::default().borders(Borders::ALL).title("Metadata"));
+                    ];
+
+                    let crs = header.crs();
+
+                    if let Some(crs) = crs {
+                        // code; name; code string; description; org; wkt
+                        lines.push(info_line("CRS Code", &crs.code().to_string()));
+                        lines.push(info_line("CRS Name", &crs.name().unwrap_or_default()));
+                        lines.push(info_line(
+                            "CRS Code String",
+                            &crs.code_string().unwrap_or_default(),
+                        ));
+                        lines.push(info_line(
+                            "CRS Description",
+                            &crs.description().unwrap_or_default(),
+                        ));
+                        lines.push(info_line("CRS Authority", &crs.org().unwrap_or_default()));
+                        lines.push(info_line("CRS WKT", &crs.wkt().unwrap_or_default()));
+                    } else {
+                        lines.push(info_line("CRS", "Undefined"));
+                    }
+
+                    let body = Paragraph::new(lines)
+                        .block(Block::default().borders(Borders::ALL).title("Metadata"));
 
                     f.render_widget(body, content_area);
                 }
@@ -255,9 +232,9 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                         "Nullable",
                         "Primary Key",
                         "Unique",
-                        "Precision",
-                        "Scale",
-                        "Width",
+                        // "Precision",
+                        // "Scale",
+                        // "Width",
                     ]
                     .iter()
                     .map(|h| Cell::from(*h))
@@ -272,29 +249,29 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                             Cell::from(c.nullable().to_string()),
                             Cell::from(c.primary_key().to_string()),
                             Cell::from(c.unique().to_string()),
-                            Cell::from(c.precision().to_string()),
-                            Cell::from(c.scale().to_string()),
-                            Cell::from(c.width().to_string()),
+                            // Cell::from(c.precision().to_string()),
+                            // Cell::from(c.scale().to_string()),
+                            // Cell::from(c.width().to_string()),
                         ];
                         Row::new(cells).height(1)
                     });
 
                     let widths = &[
-                        Constraint::Length(20),
+                        Constraint::Length(25),
                         Constraint::Length(10),
                         Constraint::Length(25),
                         Constraint::Length(10),
                         Constraint::Length(12),
                         Constraint::Length(8),
-                        Constraint::Length(10),
-                        Constraint::Length(8),
-                        Constraint::Length(8),
+                        // Constraint::Length(10),
+                        // Constraint::Length(8),
+                        // Constraint::Length(8),
                     ];
 
                     let table = Table::new(rows, widths)
                         .header(table_header)
                         .block(Block::default().borders(Borders::ALL).title("Columns"))
-                        .highlight_style(
+                        .row_highlight_style(
                             Style::default()
                                 .fg(Color::Yellow)
                                 .add_modifier(Modifier::BOLD),
@@ -313,7 +290,7 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                         .block(
                             Block::default()
                                 .borders(Borders::ALL)
-                                .title("Bounding Box Map"),
+                                .title("Extent of Data"),
                         )
                         .x_bounds([-180.0, 180.0])
                         .y_bounds([-90.0, 90.0])
