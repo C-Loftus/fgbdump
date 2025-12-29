@@ -4,13 +4,16 @@
 
 use std::io::stdout;
 
-use argh::FromArgs;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
     execute,
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
-use fgbdump::{ColumnsTableState, SelectedTab, map_with_bbox_overlay};
+use fgbdump::{
+    Column, ColumnsTableState, SelectedTab,
+    cli::{Command, TopLevel},
+    info_line, make_tabs, map_with_bbox_overlay,
+};
 use flatgeobuf::HttpFgbReader;
 use ratatui::layout::Constraint;
 use ratatui::widgets::{Cell, Row, Table};
@@ -22,42 +25,6 @@ use ratatui::{
     text::{Line, Span},
     widgets::{Block, Borders, Paragraph, Tabs},
 };
-
-#[derive(FromArgs, Debug)]
-/// Print info about a FlatGeobuf file
-struct TopLevel {
-    #[argh(subcommand)]
-    cmd: Command,
-}
-
-#[derive(FromArgs, Debug)]
-#[argh(subcommand)]
-enum Command {
-    Header(Header),
-    Query(Query),
-}
-
-#[derive(FromArgs, Debug)]
-/// Display info about the FlatGeobuf header
-#[argh(subcommand, name = "header")]
-struct Header {
-    #[argh(option, description = "path or URL to the FlatGeobuf file")]
-    file: String,
-
-    #[argh(switch, description = "print to stdout instead of the TUI")]
-    stdout: bool,
-}
-
-#[derive(FromArgs, Debug)]
-/// Query by a bounding box
-#[argh(subcommand, name = "query")]
-struct Query {
-    #[argh(option, description = "path or URL to the FlatGeobuf file")]
-    file: String,
-
-    #[argh(option, description = "bounding box as xmin,ymin,xmax,ymax")]
-    bbox: String,
-}
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -86,8 +53,7 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
     enable_raw_mode()?;
     let mut stdout = stdout();
     execute!(stdout, EnterAlternateScreen)?;
-    let backend = CrosstermBackend::new(stdout);
-    let mut terminal = Terminal::new(backend)?;
+    let mut terminal = Terminal::new(CrosstermBackend::new(stdout))?;
 
     let mut selected_tab = SelectedTab::Metadata;
 
@@ -103,21 +69,7 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
         terminal.draw(|f| {
             let size = f.area();
 
-            // Render tabs
-            let tabs_titles = SelectedTab::titles();
-            let tabs = Tabs::new(tabs_titles)
-                .select(selected_tab as usize)
-                .block(
-                    Block::default()
-                        .borders(Borders::ALL)
-                        .title("Header Categories"),
-                )
-                .style(Style::default().fg(Color::White))
-                .highlight_style(
-                    Style::default()
-                        .fg(Color::Blue)
-                        .add_modifier(Modifier::BOLD),
-                );
+            let tabs = make_tabs(selected_tab);
             f.render_widget(
                 tabs,
                 Rect {
@@ -173,9 +125,7 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
 
                     if let Some(crs) = crs {
                         // separator
-                        lines.push(
-                            Line::default(),
-                        );
+                        lines.push(Line::default());
                         // code; name; code string; description; org; wkt
                         lines.push(info_line("CRS Code", &crs.code().to_string()));
                         lines.push(info_line("CRS Name", &crs.name().unwrap_or_default()));
@@ -208,50 +158,70 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                 SelectedTab::Columns => {
                     let columns_data = header.columns().unwrap_or_default();
 
-                    let header_cells = [
-                        "Name",
-                        "Type",
-                        "Description",
-                        "Nullable",
-                        "Primary Key",
-                        "Unique",
-                        // "Precision",
-                        // "Scale",
-                        // "Width",
-                    ]
-                    .iter()
-                    .map(|h| Cell::from(*h))
-                    .collect::<Vec<_>>();
+                    // Declare table columns in one place
+                    let columns: Vec<Column<_>> = vec![
+                        Column {
+                            header: "Name",
+                            value: Box::new(|c: &flatgeobuf::Column| c.name().to_string()),
+                        },
+                        Column {
+                            header: "Type",
+                            value: Box::new(|c| format!("{:?}", c.type_())),
+                        },
+                        Column {
+                            header: "Description",
+                            value: Box::new(|c| c.description().unwrap_or("—").to_string()),
+                        },
+                        Column {
+                            header: "Nullable",
+                            value: Box::new(|c| c.nullable().to_string()),
+                        },
+                        Column {
+                            header: "Primary Key",
+                            value: Box::new(|c| c.primary_key().to_string()),
+                        },
+                        Column {
+                            header: "Unique",
+                            value: Box::new(|c| c.unique().to_string()),
+                        },
+                    ];
+
+                    // Build table header
+                    let header_cells = columns
+                        .iter()
+                        .map(|col| Cell::from(col.header))
+                        .collect::<Vec<_>>();
+
                     let table_header = Row::new(header_cells).height(1);
 
+                    // Build table rows
                     let rows = columns_data.iter().map(|c| {
-                        let cells = vec![
-                            Cell::from(c.name()),
-                            Cell::from(format!("{:?}", c.type_())),
-                            Cell::from(c.description().unwrap_or("—")),
-                            Cell::from(c.nullable().to_string()),
-                            Cell::from(c.primary_key().to_string()),
-                            Cell::from(c.unique().to_string()),
-                            // Cell::from(c.precision().to_string()),
-                            // Cell::from(c.scale().to_string()),
-                            // Cell::from(c.width().to_string()),
-                        ];
+                        let cells = columns
+                            .iter()
+                            .map(|col| Cell::from((col.value)(&c)))
+                            .collect::<Vec<_>>();
+
                         Row::new(cells).height(1)
                     });
 
-                    let widths = &[
-                        Constraint::Length(25),
-                        Constraint::Length(10),
-                        Constraint::Length(25),
-                        Constraint::Length(10),
-                        Constraint::Length(12),
-                        Constraint::Length(8),
-                        // Constraint::Length(10),
-                        // Constraint::Length(8),
-                        // Constraint::Length(8),
-                    ];
+                    // Compute column widths based on max(header, content)
+                    let widths = columns
+                        .iter()
+                        .enumerate()
+                        .map(|(i, col)| {
+                            let max_content_len = columns_data
+                                .iter()
+                                .map(|c| (col.value)(&c).len())
+                                .max()
+                                .unwrap_or(0);
 
-                    let table = Table::new(rows, widths)
+                            let width = col.header.len().max(max_content_len) as u16 + 2;
+                            Constraint::Length(width)
+                        })
+                        .collect::<Vec<_>>();
+
+                    // Build table
+                    let table = Table::new(rows, &widths)
                         .header(table_header)
                         .block(Block::default().borders(Borders::ALL).title("Columns"))
                         .row_highlight_style(
@@ -261,6 +231,7 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
                         )
                         .highlight_symbol(">> ");
 
+                    // Render
                     f.render_stateful_widget(table, content_area, &mut columns_table_state.state);
                 }
                 SelectedTab::Map => {
@@ -312,16 +283,4 @@ fn render_header_tui(header: &flatgeobuf::Header) -> Result<(), Box<dyn std::err
     terminal.show_cursor()?;
 
     Ok(())
-}
-
-fn info_line(label: &str, value: &str) -> Line<'static> {
-    Line::from(vec![
-        Span::styled(
-            format!("{label}: "),
-            Style::default()
-                .fg(Color::Yellow)
-                .add_modifier(Modifier::BOLD),
-        ),
-        Span::raw(value.to_string()),
-    ])
 }

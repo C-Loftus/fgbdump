@@ -1,7 +1,10 @@
+pub mod cli;
+
 use ratatui::{
-    style::Color,
+    style::{Color, Modifier, Style},
+    text::{Line, Span},
     widgets::{
-        Block, Borders, TableState, Widget,
+        Block, Borders, TableState, Tabs, Widget,
         canvas::{Canvas, Map, MapResolution},
     },
 };
@@ -97,4 +100,39 @@ impl SelectedTab {
     pub fn titles() -> Vec<&'static str> {
         vec!["Metadata", "Columns", "Map"]
     }
+}
+
+pub fn make_tabs(selected_tab: SelectedTab) -> impl Widget {
+    let tabs_titles = SelectedTab::titles();
+    Tabs::new(tabs_titles)
+        .select(selected_tab as usize)
+        .block(
+            Block::default()
+                .borders(Borders::ALL)
+                .title("Header Categories"),
+        )
+        .style(Style::default().fg(Color::White))
+        .highlight_style(
+            Style::default()
+                .fg(Color::Blue)
+                .add_modifier(Modifier::BOLD),
+        )
+}
+
+pub fn info_line(label: &str, value: &str) -> Line<'static> {
+    Line::from(vec![
+        Span::styled(
+            format!("{label}: "),
+            Style::default()
+                .fg(Color::Green)
+                .add_modifier(Modifier::BOLD),
+        ),
+        Span::raw(value.to_string()),
+    ])
+}
+
+
+pub struct Column<'a, T> {
+    pub header: &'a str,
+    pub value: Box<dyn Fn(&T) -> String + 'a>,
 }
