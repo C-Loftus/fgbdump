@@ -91,20 +91,21 @@ fn render_header_tui(
     let mut metadata_scroll: usize = 0;
     let mut metadata_scroll_state = ScrollbarState::default();
 
-    // Extract bbox
+    // Extract bbox; if it fails, no map can be rendered
+    // unclear if in the future i might want to handle this more gracefully
     let envelope = header
         .envelope()
-        .ok_or("No bbox extent envelope founbd in the flatgeobuf metadata")?;
+        .ok_or("No bbox extent envelope found in the flatgeobuf metadata")?;
     let bbox = Bbox::from_flatgeobuf_envelope(&envelope)?;
 
-    let crs = header
-        .crs()
-        .ok_or("No crs found in the flatgeobuf metadata; no map can be rendered".to_string())?;
+    let crs = header.crs().ok_or(
+        "No crs data found in the flatgeobuf metadata; no map can be rendered".to_string(),
+    )?;
 
     let src_proj_crs_string = format!(
         "{}:{}",
         crs.org()
-            .ok_or("No crs org found in the flatgeobuf metadata; no map can be rendered ")?,
+            .ok_or("No crs 'org' data found in the flatgeobuf metadata; no map can be rendered")?,
         crs.code()
     );
 
@@ -148,7 +149,10 @@ fn render_header_tui(
                     let byte_size_str = byte_size.map(|s| ByteSize(s).to_string());
                     let mut lines = vec![
                         info_line("Name", header.name().unwrap_or("")),
-                        info_line("File Size", byte_size_str.as_deref().unwrap_or("Unknown")),
+                        info_line(
+                            "File Size",
+                            byte_size_str.as_deref().unwrap_or("Unknown File Size"),
+                        ),
                         info_line("Description", header.description().unwrap_or("")),
                         info_line("Features", &header.features_count().to_string()),
                         info_line("Bounds", &envelope),
@@ -315,7 +319,13 @@ fn render_header_tui(
                 SelectedTab::Map => {
                     let (bbox, message) = bbox
                         .project_to_ratatui_map_crs(&src_proj_crs_string)
-                        .unwrap();
+                        // unclear if this should unwrap and panic or try and handle the error
+                        .unwrap_or_else(|e| {
+                            (
+                                Bbox::new(0.0, 0.0, 0.0, 0.0),
+                                format!("Failed to project bbox: {e}"),
+                            )
+                        });
                     let canvas = make_map_with_bbox_overlay(&message, &bbox);
                     f.render_widget(canvas, content_area);
                 }

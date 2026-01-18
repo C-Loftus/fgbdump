@@ -14,6 +14,8 @@ Press `q` or `ctrl-c` to quit the application.
 
 ## Demo
 
+The following gif shows the output of: `fgbdump "https://storage.googleapis.com/national-hydrologic-geospatial-fabric-reference-hydrofabric/reference_catchments_and_flowlines.fgb"`
+
 ![fgbdump demo](https://github.com/C-Loftus/fgbdump/raw/main/demo.gif)
 
 ## Installation
