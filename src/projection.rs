@@ -23,6 +23,8 @@ impl Bbox {
         }
     }
 
+    /// Given the envelope from a flatgeobuf file which represents the geospatial extent,
+    /// generate a bbox struct;
     pub fn from_flatgeobuf_envelope<'a>(
         envelope: &flatbuffers::Vector<'a, f64>,
     ) -> Result<Self, String> {
@@ -37,6 +39,8 @@ impl Bbox {
             ymax: envelope.get(3),
         })
     }
+
+    /// Project the bbox to the ratatui map crs (EPSG:4326)
     pub fn project_to_ratatui_map_crs(
         &self,
         source_crs: &str,
