@@ -91,9 +91,9 @@ fn render_header_tui(
         .ok_or("No bbox extent envelope found in the flatgeobuf metadata")?;
     let bbox = Bbox::from_flatgeobuf_envelope(&envelope)?;
 
-    let crs = header
-        .crs()
-        .ok_or("No crs data found in the flatgeobuf metadata; no map can be rendered".to_string())?;
+    let crs = header.crs().ok_or(
+        "No crs data found in the flatgeobuf metadata; no map can be rendered".to_string(),
+    )?;
 
     let src_proj_crs_string = format!(
         "{}:{}",
@@ -142,7 +142,10 @@ fn render_header_tui(
                     let byte_size_str = byte_size.map(|s| ByteSize(s).to_string());
                     let mut lines = vec![
                         info_line("Name", header.name().unwrap_or("")),
-                        info_line("File Size", byte_size_str.as_deref().unwrap_or("Unknown File Size")),
+                        info_line(
+                            "File Size",
+                            byte_size_str.as_deref().unwrap_or("Unknown File Size"),
+                        ),
                         info_line("Description", header.description().unwrap_or("")),
                         info_line("Features", &header.features_count().to_string()),
                         info_line("Bounds", &envelope),

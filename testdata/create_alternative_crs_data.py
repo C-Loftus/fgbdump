@@ -1,3 +1,6 @@
+# Copyright 2026 Colton Loftus
+# SPDX-License-Identifier: Apache-2.0
+
 # /// script
 # requires-python = ">=3.12"
 # dependencies = [ "geopandas", "fiona" ]
