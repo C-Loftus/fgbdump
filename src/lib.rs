@@ -1,4 +1,5 @@
-pub mod cli;
+// Copyright 2026 Colton Loftus
+// SPDX-License-Identifier: Apache-2.0
 
 use ratatui::{
     style::{Color, Modifier, Style},
@@ -8,6 +9,9 @@ use ratatui::{
         canvas::{Canvas, Map, MapResolution},
     },
 };
+
+pub mod cli;
+pub mod projection;
 
 pub struct ColumnsTableState {
     pub state: TableState,
@@ -55,15 +59,11 @@ impl Default for ColumnsTableState {
     }
 }
 
-pub fn map_with_bbox_overlay(xmin: f64, ymin: f64, xmax: f64, ymax: f64) -> impl Widget {
+pub fn make_map_with_bbox_overlay(map_title: &str, bbox: &projection::Bbox) -> impl Widget {
     const MAX_LONGITUDE_RANGE: [f64; 2] = [-180.0, 180.0];
     const MAX_LATITUDE_RANGE: [f64; 2] = [-90.0, 90.0];
     Canvas::default()
-        .block(
-            Block::default()
-                .borders(Borders::ALL)
-                .title("Extent of Data in EPSG:4326"),
-        )
+        .block(Block::default().borders(Borders::ALL).title(map_title))
         .x_bounds(MAX_LONGITUDE_RANGE)
         .y_bounds(MAX_LATITUDE_RANGE)
         .paint(move |ctx| {
@@ -75,10 +75,10 @@ pub fn map_with_bbox_overlay(xmin: f64, ymin: f64, xmax: f64, ymax: f64) -> impl
             // make all the section that contains the dataset
             // enveloped in green to show it is included
             ctx.draw(&ratatui::widgets::canvas::Rectangle {
-                x: xmin,
-                y: ymin,
-                width: xmax - xmin,
-                height: ymax - ymin,
+                x: bbox.xmin,
+                y: bbox.ymin,
+                width: bbox.xmax - bbox.xmin,
+                height: bbox.ymax - bbox.ymin,
                 color: Color::Green,
             });
         })

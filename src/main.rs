@@ -1,11 +1,6 @@
 // Copyright 2025 Colton Loftus
 // SPDX-License-Identifier: Apache-2.0
 
-use std::{
-    fs::File,
-    io::{BufReader, stdout},
-};
-
 use bytesize::ByteSize;
 use crossterm::{
     event::{self, Event, KeyCode, KeyEvent, KeyEventKind},
@@ -13,8 +8,8 @@ use crossterm::{
     terminal::{EnterAlternateScreen, LeaveAlternateScreen, disable_raw_mode, enable_raw_mode},
 };
 use fgbdump::{
-    Column, ColumnsTableState, SelectedTab, cli::Args, info_line, is_remote_file, make_tabs,
-    map_with_bbox_overlay,
+    Column, ColumnsTableState, SelectedTab, cli::Args, info_line, is_remote_file,
+    make_map_with_bbox_overlay, make_tabs, projection::Bbox,
 };
 use flatgeobuf::{FgbReader, HttpFgbReader};
 use ratatui::{
@@ -30,6 +25,10 @@ use ratatui::{
     },
 };
 use reqwest::header::CONTENT_LENGTH;
+use std::{
+    fs::File,
+    io::{BufReader, stdout},
+};
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -85,11 +84,23 @@ fn render_header_tui(
     let mut metadata_scroll: usize = 0;
     let mut metadata_scroll_state = ScrollbarState::default();
 
-    // Extract bbox
-    let bbox: [f64; 4] = header
+    // Extract bbox; if it fails, no map can be rendered
+    // unclear if in the future i might want to handle this more gracefully
+    let envelope = header
         .envelope()
-        .map(|v| [v.get(0), v.get(1), v.get(2), v.get(3)])
-        .unwrap_or([0.0, 0.0, 0.0, 0.0]);
+        .ok_or("No bbox extent envelope found in the flatgeobuf metadata")?;
+    let bbox = Bbox::from_flatgeobuf_envelope(&envelope)?;
+
+    let crs = header.crs().ok_or(
+        "No crs data found in the flatgeobuf metadata; no map can be rendered".to_string(),
+    )?;
+
+    let src_proj_crs_string = format!(
+        "{}:{}",
+        crs.org()
+            .ok_or("No crs 'org' data found in the flatgeobuf metadata; no map can be rendered")?,
+        crs.code()
+    );
 
     let mut columns_table_state = ColumnsTableState::new();
     let mut columns_scroll_state = ScrollbarState::default();
@@ -131,7 +142,10 @@ fn render_header_tui(
                     let byte_size_str = byte_size.map(|s| ByteSize(s).to_string());
                     let mut lines = vec![
                         info_line("Name", header.name().unwrap_or("")),
-                        info_line("File Size", byte_size_str.as_deref().unwrap_or("Unknown")),
+                        info_line(
+                            "File Size",
+                            byte_size_str.as_deref().unwrap_or("Unknown File Size"),
+                        ),
                         info_line("Description", header.description().unwrap_or("")),
                         info_line("Features", &header.features_count().to_string()),
                         info_line("Bounds", &envelope),
@@ -296,7 +310,16 @@ fn render_header_tui(
                 }
 
                 SelectedTab::Map => {
-                    let canvas = map_with_bbox_overlay(bbox[0], bbox[1], bbox[2], bbox[3]);
+                    let (bbox, message) = bbox
+                        .project_to_ratatui_map_crs(&src_proj_crs_string)
+                        // unclear if this should unwrap and panic or try and handle the error
+                        .unwrap_or_else(|e| {
+                            (
+                                Bbox::new(0.0, 0.0, 0.0, 0.0),
+                                format!("Failed to project bbox: {e}"),
+                            )
+                        });
+                    let canvas = make_map_with_bbox_overlay(&message, &bbox);
                     f.render_widget(canvas, content_area);
                 }
             }
