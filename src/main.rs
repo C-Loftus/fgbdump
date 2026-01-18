@@ -27,12 +27,19 @@ use ratatui::{
 use reqwest::header::CONTENT_LENGTH;
 use std::{
     fs::File,
-    io::{BufReader, stdout},
+    io::{BufReader, IsTerminal, stdout},
 };
 
 #[tokio::main(flavor = "current_thread")]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let args: Args = argh::from_env();
+
+    if !args.stdout && !stdout().is_terminal() {
+        eprintln!(
+            "To render the TUI, this program must be run in a terminal. To dump text to stdout, use the --stdout flag."
+        );
+        std::process::exit(1);
+    }
 
     if is_remote_file(&args.file) {
         // Remote file: use HTTP HEAD to get content length
